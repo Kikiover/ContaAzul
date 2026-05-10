@@ -411,6 +411,11 @@ class MenuCliente(tk.Menu):
         self.add_command(label="⊘  Desativar cliente",
                          command=self._desativar,
                          foreground=CORES["vermelho"])
+        self.add_separator()
+        self.add_command(label="🗑  Limpar banco local",
+                        command=self._limpar_banco,
+                        foreground=CORES["amarelo"])
+        
 
     def _sync(self):
         self._app._executar_sync([self._cliente])
@@ -438,6 +443,29 @@ class MenuCliente(tk.Menu):
                 "UPDATE clientes SET ativo=0, atualizado_em=datetime('now') WHERE id=?",
                 (self._cliente["id"],)
             )
+        self._atualizar()
+    
+    def _limpar_banco(self):
+        import os
+        from database import caminho_db_cliente
+        nome = self._cliente["nome"]
+        ok = messagebox.askyesno(
+            "Limpar banco local",
+            f"Apagar o banco de dados local de '{nome}'?\n\n"
+            "Os dados serão removidos mas o cliente permanece cadastrado.\n"
+            "Uma nova sync irá recriar o banco do zero.",
+            parent=self._app,
+        )
+        if not ok:
+            return
+        path = caminho_db_cliente(self._cliente["id"])
+        for ext in ["", "-wal", "-shm"]:
+            try:
+                os.remove(path + ext)
+            except FileNotFoundError:
+                pass
+        messagebox.showinfo("Banco removido",
+                            f"Banco de '{nome}' removido com sucesso.", parent=self._app)
         self._atualizar()
 
 

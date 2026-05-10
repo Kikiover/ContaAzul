@@ -167,4 +167,4 @@ class ContaAzulAPI:
         return data.get("saldo_atual", 0.0)
 
     def get_categorias(self) -> list:
-        return self._paginar("/v1/categorias", {"permite_apenas_filhos": "false"})
+        return self._paginar("/v1/categorias")

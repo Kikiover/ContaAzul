@@ -81,30 +81,33 @@ def salvar_contas_receber(cliente_id: str, registros: list) -> int:
         r.get("nao_pago"),
         _nested(r, "cliente", "id"),
         _nested(r, "cliente", "nome"),
-        _json(r.get("categorias")),
-        _json(r.get("centros_custo")),
+        _nested(r, "categorias", 0, "id") if r.get("categorias") else None,
+        _nested(r, "categorias", 0, "nome") if r.get("categorias") else None,
+        _json(r.get("centros_custo")),   # ← removeu categorias JSON aqui
         _json(r),
     ) for r in registros]
 
     with conn_cliente(cliente_id) as conn:
         conn.executemany("""
-            INSERT INTO contas_receber (
-                id, descricao, data_vencimento, data_competencia,
-                data_criacao, data_alteracao, status,
-                total, pago, nao_pago,
-                cliente_id, cliente_nome,
-                categorias, centros_custo, payload_raw, sincronizado_em
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
-            ON CONFLICT(id) DO UPDATE SET
-                status          = excluded.status,
-                total           = excluded.total,
-                pago            = excluded.pago,
-                nao_pago        = excluded.nao_pago,
-                data_alteracao  = excluded.data_alteracao,
-                categorias      = excluded.categorias,
-                centros_custo   = excluded.centros_custo,
-                payload_raw     = excluded.payload_raw,
-                sincronizado_em = datetime('now')
+        INSERT INTO contas_receber (
+            id, descricao, data_vencimento, data_competencia,
+            data_criacao, data_alteracao, status,
+            total, pago, nao_pago,
+            cliente_id, cliente_nome,
+            categoria_id, categoria_nome,
+            centros_custo, payload_raw, sincronizado_em   -- ← sem categorias
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+        ON CONFLICT(id) DO UPDATE SET
+            status          = excluded.status,
+            total           = excluded.total,
+            pago            = excluded.pago,
+            nao_pago        = excluded.nao_pago,
+            data_alteracao  = excluded.data_alteracao,
+            categoria_id    = excluded.categoria_id,
+            categoria_nome  = excluded.categoria_nome,
+            centros_custo   = excluded.centros_custo,    -- ← sem categorias
+            payload_raw     = excluded.payload_raw,
+            sincronizado_em = datetime('now')
         """, rows)
     return len(rows)
 
@@ -128,30 +131,33 @@ def salvar_contas_pagar(cliente_id: str, registros: list) -> int:
         r.get("nao_pago"),
         _nested(r, "fornecedor", "id"),
         _nested(r, "fornecedor", "nome"),
-        _json(r.get("categorias")),
+        _nested(r, "categorias", 0, "id") if r.get("categorias") else None,
+        _nested(r, "categorias", 0, "nome") if r.get("categorias") else None,
         _json(r.get("centros_custo")),
         _json(r),
     ) for r in registros]
 
     with conn_cliente(cliente_id) as conn:
         conn.executemany("""
-            INSERT INTO contas_pagar (
-                id, descricao, data_vencimento, data_competencia,
-                data_criacao, data_alteracao, status,
-                total, pago, nao_pago,
-                fornecedor_id, fornecedor_nome,
-                categorias, centros_custo, payload_raw, sincronizado_em
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
-            ON CONFLICT(id) DO UPDATE SET
-                status          = excluded.status,
-                total           = excluded.total,
-                pago            = excluded.pago,
-                nao_pago        = excluded.nao_pago,
-                data_alteracao  = excluded.data_alteracao,
-                categorias      = excluded.categorias,
-                centros_custo   = excluded.centros_custo,
-                payload_raw     = excluded.payload_raw,
-                sincronizado_em = datetime('now')
+        INSERT INTO contas_pagar (
+            id, descricao, data_vencimento, data_competencia,
+            data_criacao, data_alteracao, status,
+            total, pago, nao_pago,
+            fornecedor_id, fornecedor_nome,
+            categoria_id, categoria_nome,
+            centros_custo, payload_raw, sincronizado_em
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+        ON CONFLICT(id) DO UPDATE SET
+            status          = excluded.status,
+            total           = excluded.total,
+            pago            = excluded.pago,
+            nao_pago        = excluded.nao_pago,
+            data_alteracao  = excluded.data_alteracao,
+            categoria_id    = excluded.categoria_id,
+            categoria_nome  = excluded.categoria_nome,
+            centros_custo   = excluded.centros_custo,
+            payload_raw     = excluded.payload_raw,
+            sincronizado_em = datetime('now')
         """, rows)
     return len(rows)
 
@@ -257,4 +263,16 @@ def salvar_categorias(cliente_id: str, registros: list) -> int:
                 considera_custo_dre = excluded.considera_custo_dre,
                 sincronizado_em     = datetime('now')
         """, rows)
+
+        # Após inserir todas, popula o nome da categoria pai via self-join
+        conn.execute("""
+            UPDATE categorias 
+            SET categoria_pai_nome = (
+                SELECT p.nome 
+                FROM categorias p 
+                WHERE p.id = categorias.categoria_pai
+            )
+            WHERE categoria_pai IS NOT NULL
+        """)
+
     return len(rows)

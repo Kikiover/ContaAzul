@@ -4,10 +4,6 @@ import sqlite3
 from config import CONTROLE_DB, DRIVE_ROOT
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# HELPERS
-# ═══════════════════════════════════════════════════════════════════════════════
-
 def _conectar(path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
@@ -17,7 +13,7 @@ def _conectar(path: str) -> sqlite3.Connection:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# BANCO DE CONTROLE  (local, só seu — tokens, clientes, logs)
+# BANCO DE CONTROLE
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def conn_controle() -> sqlite3.Connection:
@@ -33,7 +29,6 @@ def init_controle():
                 access_token            TEXT,
                 refresh_token           TEXT,
                 expires_at              REAL,
-                -- marcadores de sync por tipo
                 ultima_sync_pessoas     TEXT,
                 ultima_sync_receber     TEXT,
                 ultima_sync_pagar       TEXT,
@@ -50,7 +45,7 @@ def init_controle():
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
                 cliente_id    TEXT NOT NULL,
                 tipo          TEXT NOT NULL,
-                status        TEXT NOT NULL,   -- 'ok' | 'erro'
+                status        TEXT NOT NULL,
                 registros     INTEGER DEFAULT 0,
                 mensagem      TEXT,
                 iniciado_em   TEXT DEFAULT (datetime('now')),
@@ -97,9 +92,6 @@ def atualizar_tokens(cliente_id: str, access_token: str, refresh_token: str, exp
 
 
 def atualizar_ultima_sync(cliente_id: str, tipo: str, timestamp_iso: str):
-    """
-    tipo: 'pessoas' | 'receber' | 'pagar' | 'contas' | 'saldos' | 'saldo_ini'
-    """
     col = f"ultima_sync_{tipo}"
     with conn_controle() as conn:
         conn.execute(
@@ -118,7 +110,7 @@ def registrar_log(cliente_id: str, tipo: str, status: str,
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# BANCO DO CLIENTE  (no Google Drive — só dados financeiros)
+# BANCO DO CLIENTE
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def caminho_db_cliente(cliente_id: str) -> str:
@@ -133,14 +125,14 @@ def conn_cliente(cliente_id: str) -> sqlite3.Connection:
 
 def init_db_cliente(cliente_id: str):
     with conn_cliente(cliente_id) as conn:
+        # Tabelas — executescript lida bem com CREATE TABLE IF NOT EXISTS
         conn.executescript("""
-            -- Clientes e fornecedores da empresa
             CREATE TABLE IF NOT EXISTS pessoas (
                 id              TEXT PRIMARY KEY,
                 nome            TEXT,
                 documento       TEXT,
                 tipo_pessoa     TEXT,
-                perfis          TEXT,   -- JSON: ["CLIENTE","FORNECEDOR"]
+                perfis          TEXT,
                 email           TEXT,
                 telefone        TEXT,
                 ativo           INTEGER,
@@ -150,7 +142,6 @@ def init_db_cliente(cliente_id: str):
                 sincronizado_em TEXT DEFAULT (datetime('now'))
             );
 
-            -- Contas a receber (parcelas)
             CREATE TABLE IF NOT EXISTS contas_receber (
                 id               TEXT PRIMARY KEY,
                 descricao        TEXT,
@@ -164,13 +155,13 @@ def init_db_cliente(cliente_id: str):
                 nao_pago         REAL,
                 cliente_id       TEXT,
                 cliente_nome     TEXT,
-                categorias       TEXT,   -- JSON
-                centros_custo    TEXT,   -- JSON
+                categoria_id     TEXT,
+                categoria_nome   TEXT,
+                centros_custo    TEXT,
                 payload_raw      TEXT,
                 sincronizado_em  TEXT DEFAULT (datetime('now'))
             );
 
-            -- Contas a pagar (parcelas)
             CREATE TABLE IF NOT EXISTS contas_pagar (
                 id               TEXT PRIMARY KEY,
                 descricao        TEXT,
@@ -184,13 +175,13 @@ def init_db_cliente(cliente_id: str):
                 nao_pago         REAL,
                 fornecedor_id    TEXT,
                 fornecedor_nome  TEXT,
-                categorias       TEXT,   -- JSON
-                centros_custo    TEXT,   -- JSON
+                categoria_id     TEXT,
+                categoria_nome   TEXT,
+                centros_custo    TEXT,
                 payload_raw      TEXT,
                 sincronizado_em  TEXT DEFAULT (datetime('now'))
             );
 
-            -- Contas financeiras (bancos, caixas, cartões)
             CREATE TABLE IF NOT EXISTS contas_financeiras (
                 id              TEXT PRIMARY KEY,
                 nome            TEXT,
@@ -204,7 +195,6 @@ def init_db_cliente(cliente_id: str):
                 sincronizado_em TEXT DEFAULT (datetime('now'))
             );
 
-            -- Saldo atual capturado a cada sync (histórico por snapshot)
             CREATE TABLE IF NOT EXISTS saldos_snapshot (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
                 conta_id        TEXT NOT NULL,
@@ -213,53 +203,53 @@ def init_db_cliente(cliente_id: str):
                 capturado_em    TEXT DEFAULT (datetime('now'))
             );
 
-            -- Saldo inicial configurado no ERP por período
             CREATE TABLE IF NOT EXISTS saldos_iniciais (
                 id                  INTEGER PRIMARY KEY AUTOINCREMENT,
                 id_conta_financeira TEXT NOT NULL,
                 data_competencia    TEXT NOT NULL,
                 saldo_inicial       REAL,
-                tipo                TEXT,   -- RECEITA | DESPESA
+                tipo                TEXT,
                 sincronizado_em     TEXT DEFAULT (datetime('now')),
                 UNIQUE(id_conta_financeira, data_competencia)
             );
-            
+
             CREATE TABLE IF NOT EXISTS categorias (
-                id              TEXT PRIMARY KEY,
-                nome            TEXT,
-                tipo            TEXT,       -- RECEITA | DESPESA
-                categoria_pai   TEXT,
-                entrada_dre     TEXT,
+                id                  TEXT PRIMARY KEY,
+                nome                TEXT,
+                tipo                TEXT,
+                categoria_pai       TEXT,
+                categoria_pai_nome  TEXT,
+                entrada_dre         TEXT,
                 considera_custo_dre INTEGER,
-                sincronizado_em TEXT DEFAULT (datetime('now'))
+                sincronizado_em     TEXT DEFAULT (datetime('now'))
             );
-                           
+
+            CREATE INDEX IF NOT EXISTS idx_receber_vencimento ON contas_receber(data_vencimento);
+            CREATE INDEX IF NOT EXISTS idx_receber_status     ON contas_receber(status);
+            CREATE INDEX IF NOT EXISTS idx_receber_cliente    ON contas_receber(cliente_id);
+            CREATE INDEX IF NOT EXISTS idx_pagar_vencimento   ON contas_pagar(data_vencimento);
+            CREATE INDEX IF NOT EXISTS idx_pagar_status       ON contas_pagar(status);
+            CREATE INDEX IF NOT EXISTS idx_pagar_fornecedor   ON contas_pagar(fornecedor_id);
+            CREATE INDEX IF NOT EXISTS idx_pessoas_perfis     ON pessoas(perfis);
+            CREATE INDEX IF NOT EXISTS idx_saldo_conta        ON saldos_snapshot(conta_id);
+        """)
+
+        # View separada do executescript — SQLite exige isso
+        conn.execute("""
             CREATE VIEW IF NOT EXISTS categorias_completas AS
             SELECT
                 c.id,
                 c.nome,
                 c.tipo,
-                c.categoria_pai       AS categoria_pai_id,
-                p.nome                AS categoria_pai_nome,
+                c.categoria_pai      AS categoria_pai_id,
+                c.categoria_pai_nome,
                 c.entrada_dre,
                 c.considera_custo_dre,
                 c.sincronizado_em
             FROM categorias c
-            LEFT JOIN categorias p ON p.id = c.categoria_pai;
-
-            -- Índices para filtros comuns no Power BI
-            CREATE INDEX IF NOT EXISTS idx_receber_vencimento  ON contas_receber(data_vencimento);
-            CREATE INDEX IF NOT EXISTS idx_receber_status      ON contas_receber(status);
-            CREATE INDEX IF NOT EXISTS idx_receber_cliente     ON contas_receber(cliente_id);
-            CREATE INDEX IF NOT EXISTS idx_pagar_vencimento    ON contas_pagar(data_vencimento);
-            CREATE INDEX IF NOT EXISTS idx_pagar_status        ON contas_pagar(status);
-            CREATE INDEX IF NOT EXISTS idx_pagar_fornecedor    ON contas_pagar(fornecedor_id);
-            CREATE INDEX IF NOT EXISTS idx_pessoas_perfis      ON pessoas(perfis);
-            CREATE INDEX IF NOT EXISTS idx_saldo_conta         ON saldos_snapshot(conta_id);
         """)
 
 
 def checkpoint_wal(cliente_id: str):
-    """Consolida WAL antes do Drive sincronizar — evita arquivos incompletos."""
     with conn_cliente(cliente_id) as conn:
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
