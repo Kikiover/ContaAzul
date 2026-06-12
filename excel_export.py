@@ -133,14 +133,17 @@ def exportar_pessoas(cliente_id: str, registros: list):
     _criar_planilha(cliente_id, "Pessoas", colunas, linhas, "pessoas.xlsx", "Pessoas")
 
 
-def exportar_contas_receber(cliente_id: str, registros: list):
+def exportar_contas_receber(cliente_id: str, registros: list,
+                            conta_financeira_id: str = None,
+                            conta_financeira_nome: str = None):
     if not registros:
         return
     colunas = ["id", "descricao", "data_vencimento", "data_competencia",
                "data_criacao", "data_alteracao", "status",
                "total", "pago", "nao_pago",
                "cliente_id", "cliente_nome",
-               "categoria_id", "categoria_nome", "centros_custo"]
+               "categoria_id", "categoria_nome", "centros_custo",
+               "conta_financeira_id", "conta_financeira_nome"]
 
     def _n(obj, *keys):
         for k in keys:
@@ -157,20 +160,26 @@ def exportar_contas_receber(cliente_id: str, registros: list):
         _n(r, "cliente", "id"), _n(r, "cliente", "nome"),
         (r.get("categorias") or [{}])[0].get("id"),
         (r.get("categorias") or [{}])[0].get("nome"),
-        json.dumps(r.get("centros_custo"), ensure_ascii=False) if r.get("centros_custo") else None,
+        json.dumps(r.get("centros_de_custo") or r.get("centros_custo"), ensure_ascii=False)
+            if (r.get("centros_de_custo") or r.get("centros_custo")) else None,
+        r.get("_cfi") or conta_financeira_id,
+        r.get("_cfn") or conta_financeira_nome,
     ) for r in registros]
     _criar_planilha(cliente_id, "Contas a Receber", colunas, linhas,
                     "contas_receber.xlsx", "ContasReceber")
 
 
-def exportar_contas_pagar(cliente_id: str, registros: list):
+def exportar_contas_pagar(cliente_id: str, registros: list,
+                          conta_financeira_id: str = None,
+                          conta_financeira_nome: str = None):
     if not registros:
         return
     colunas = ["id", "descricao", "data_vencimento", "data_competencia",
                "data_criacao", "data_alteracao", "status",
                "total", "pago", "nao_pago",
                "fornecedor_id", "fornecedor_nome",
-               "categoria_id", "categoria_nome", "centros_custo"]
+               "categoria_id", "categoria_nome", "centros_custo",
+               "conta_financeira_id", "conta_financeira_nome"]
 
     def _n(obj, *keys):
         for k in keys:
@@ -187,7 +196,10 @@ def exportar_contas_pagar(cliente_id: str, registros: list):
         _n(r, "fornecedor", "id"), _n(r, "fornecedor", "nome"),
         (r.get("categorias") or [{}])[0].get("id"),
         (r.get("categorias") or [{}])[0].get("nome"),
-        json.dumps(r.get("centros_custo"), ensure_ascii=False) if r.get("centros_custo") else None,
+        json.dumps(r.get("centros_de_custo") or r.get("centros_custo"), ensure_ascii=False)
+            if (r.get("centros_de_custo") or r.get("centros_custo")) else None,
+        r.get("_cfi") or conta_financeira_id,
+        r.get("_cfn") or conta_financeira_nome,
     ) for r in registros]
     _criar_planilha(cliente_id, "Contas a Pagar", colunas, linhas,
                     "contas_pagar.xlsx", "ContasPagar")
@@ -259,7 +271,10 @@ def exportar_saldos_snapshot(cliente_id: str, snapshots: list):
 def exportar_saldos_mensais(cliente_id: str, registros: list):
     if not registros:
         return
-    colunas = ["mes", "entradas", "saidas", "saldo_final"]
-    linhas = [(r["mes"], r["entradas"], r["saidas"], r["saldo_final"]) for r in registros]
+    colunas = ["conta_id", "conta_nome", "mes", "entradas", "saidas", "saldo_final"]
+    linhas = [(
+        r["conta_id"], r["conta_nome"], r["mes"],
+        r["entradas"], r["saidas"], r["saldo_final"]
+    ) for r in registros]
     _criar_planilha(cliente_id, "Saldos Mensais", colunas, linhas,
                     "saldos_mensais.xlsx", "SaldosMensais")

@@ -1,8 +1,7 @@
 # database.py
 import os
 import sqlite3
-import config
-from config import CONTROLE_DB
+from config import CONTROLE_DB, DRIVE_ROOT
 
 
 def _conectar(path: str) -> sqlite3.Connection:
@@ -115,7 +114,7 @@ def registrar_log(cliente_id: str, tipo: str, status: str,
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def caminho_db_cliente(cliente_id: str) -> str:
-    pasta = os.path.join(config.DRIVE_ROOT, cliente_id)
+    pasta = os.path.join(DRIVE_ROOT, cliente_id)
     os.makedirs(pasta, exist_ok=True)
     return os.path.join(pasta, "dados.db")
 
@@ -249,6 +248,25 @@ def init_db_cliente(cliente_id: str):
                 c.sincronizado_em
             FROM categorias c
         """)
+        _migrar_db_cliente(conn)
+
+
+def _migrar_db_cliente(conn: sqlite3.Connection):
+    """Adiciona colunas novas sem quebrar bancos antigos."""
+    migrations = [
+        ("contas_receber", "conta_financeira_id",   "TEXT"),
+        ("contas_receber", "conta_financeira_nome",  "TEXT"),
+        ("contas_pagar",   "conta_financeira_id",   "TEXT"),
+        ("contas_pagar",   "conta_financeira_nome",  "TEXT"),
+    ]
+    # Recria saldos_mensais se estiver no esquema antigo (sem conta_id)
+    colunas_sm = [r[1] for r in conn.execute("PRAGMA table_info(saldos_mensais)").fetchall()]
+    if colunas_sm and "conta_id" not in colunas_sm:
+        conn.execute("DROP TABLE saldos_mensais")
+    for tabela, coluna, tipo in migrations:
+        colunas = [r[1] for r in conn.execute(f"PRAGMA table_info({tabela})").fetchall()]
+        if coluna not in colunas:
+            conn.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
 
 
 def checkpoint_wal(cliente_id: str):

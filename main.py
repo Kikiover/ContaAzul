@@ -37,21 +37,57 @@ def _data_alteracao_incremental(ultima_sync: str, recuo_dias: int = 3) -> str | 
 
 
 def _sync_pessoas(api: ContaAzulAPI, cliente_id: str, ultima_sync: str) -> int:
-    # Pessoas são poucos registros — sempre sync completa para não perder ninguém
+    # Sempre sync completa — poucos registros e evita perder cadastros
     registros = api.get_pessoas()
     return salvar_pessoas(cliente_id, registros)
 
 
-def _sync_contas_receber(api: ContaAzulAPI, cliente_id: str, ultima_sync: str) -> int:
+def _sync_contas_receber(api: ContaAzulAPI, cliente_id: str,
+                         ultima_sync: str, contas: list) -> int:
+    """
+    Busca contas a receber filtrando por conta financeira.
+    Uma chamada por conta — garante que cada transação seja vinculada
+    à sua conta bancária correta.
+    """
     data_alt = _data_alteracao_incremental(ultima_sync)
-    registros = api.get_contas_receber(data_alteracao_de=data_alt)
-    return salvar_contas_receber(cliente_id, registros)
+    total = 0
+    for conta in contas:
+        cid   = conta["id"]
+        cnome = conta.get("nome")
+        print(f"    [receber] conta: {cnome}")
+        registros = api.get_contas_receber(
+            data_alteracao_de=data_alt,
+            ids_contas_financeiras=[cid],
+        )
+        total += salvar_contas_receber(cliente_id, registros,
+                                       conta_financeira_id=cid,
+                                       conta_financeira_nome=cnome)
+        time.sleep(0.3)
+    return total
 
 
-def _sync_contas_pagar(api: ContaAzulAPI, cliente_id: str, ultima_sync: str) -> int:
+def _sync_contas_pagar(api: ContaAzulAPI, cliente_id: str,
+                       ultima_sync: str, contas: list) -> int:
+    """
+    Busca contas a pagar filtrando por conta financeira.
+    Uma chamada por conta — garante que cada transação seja vinculada
+    à sua conta bancária correta.
+    """
     data_alt = _data_alteracao_incremental(ultima_sync)
-    registros = api.get_contas_pagar(data_alteracao_de=data_alt)
-    return salvar_contas_pagar(cliente_id, registros)
+    total = 0
+    for conta in contas:
+        cid   = conta["id"]
+        cnome = conta.get("nome")
+        print(f"    [pagar] conta: {cnome}")
+        registros = api.get_contas_pagar(
+            data_alteracao_de=data_alt,
+            ids_contas_financeiras=[cid],
+        )
+        total += salvar_contas_pagar(cliente_id, registros,
+                                     conta_financeira_id=cid,
+                                     conta_financeira_nome=cnome)
+        time.sleep(0.3)
+    return total
 
 
 def _sync_contas_financeiras(api: ContaAzulAPI, cliente_id: str) -> tuple[int, list]:
@@ -134,33 +170,8 @@ def sincronizar_cliente(cliente, callback=None) -> dict:
         registrar_log(cid, "pessoas", "erro", mensagem=traceback.format_exc())
         res["erros"].append(f"pessoas: {e}")
 
-    # ── Contas a Receber ──────────────────────────────────────────────────────
-    try:
-        log("[→] Contas a Receber...")
-        total = _sync_contas_receber(api, cid, cliente["ultima_sync_receber"])
-        atualizar_ultima_sync(cid, "receber", datetime.now().isoformat())
-        registrar_log(cid, "receber", "ok", registros=total)
-        res["receber"] = total
-        log(f"[✓] Contas a Receber: {total}")
-    except Exception as e:
-        log(f"[✗] Contas a Receber: {e}")
-        registrar_log(cid, "receber", "erro", mensagem=traceback.format_exc())
-        res["erros"].append(f"receber: {e}")
-
-    # ── Contas a Pagar ────────────────────────────────────────────────────────
-    try:
-        log("[→] Contas a Pagar...")
-        total = _sync_contas_pagar(api, cid, cliente["ultima_sync_pagar"])
-        atualizar_ultima_sync(cid, "pagar", datetime.now().isoformat())
-        registrar_log(cid, "pagar", "ok", registros=total)
-        res["pagar"] = total
-        log(f"[✓] Contas a Pagar: {total}")
-    except Exception as e:
-        log(f"[✗] Contas a Pagar: {e}")
-        registrar_log(cid, "pagar", "erro", mensagem=traceback.format_exc())
-        res["erros"].append(f"pagar: {e}")
-
     # ── Contas Financeiras + Saldos Atuais ────────────────────────────────────
+    contas = []
     try:
         log("[→] Contas Financeiras...")
         total_contas, contas = _sync_contas_financeiras(api, cid)
@@ -179,6 +190,32 @@ def sincronizar_cliente(cliente, callback=None) -> dict:
         log(f"[✗] Contas/Saldos: {e}")
         registrar_log(cid, "contas", "erro", mensagem=traceback.format_exc())
         res["erros"].append(f"contas: {e}")
+
+    # ── Contas a Receber ──────────────────────────────────────────────────────
+    try:
+        log("[→] Contas a Receber...")
+        total = _sync_contas_receber(api, cid, cliente["ultima_sync_receber"], contas)
+        atualizar_ultima_sync(cid, "receber", datetime.now().isoformat())
+        registrar_log(cid, "receber", "ok", registros=total)
+        res["receber"] = total
+        log(f"[✓] Contas a Receber: {total}")
+    except Exception as e:
+        log(f"[✗] Contas a Receber: {e}")
+        registrar_log(cid, "receber", "erro", mensagem=traceback.format_exc())
+        res["erros"].append(f"receber: {e}")
+
+    # ── Contas a Pagar ────────────────────────────────────────────────────────
+    try:
+        log("[→] Contas a Pagar...")
+        total = _sync_contas_pagar(api, cid, cliente["ultima_sync_pagar"], contas)
+        atualizar_ultima_sync(cid, "pagar", datetime.now().isoformat())
+        registrar_log(cid, "pagar", "ok", registros=total)
+        res["pagar"] = total
+        log(f"[✓] Contas a Pagar: {total}")
+    except Exception as e:
+        log(f"[✗] Contas a Pagar: {e}")
+        registrar_log(cid, "pagar", "erro", mensagem=traceback.format_exc())
+        res["erros"].append(f"pagar: {e}")
 
 
         # ── Categorias ────────────────────────────────────────────────────────────

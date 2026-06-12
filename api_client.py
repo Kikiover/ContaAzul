@@ -75,8 +75,6 @@ class ContaAzulAPI:
                 print("========================")
             print(f"  p.{params['pagina']} | +{len(itens)} | acumulado: {len(todos)}/{total}")
 
-            # Para se nao veio nada, ou veio menos que o tamanho pedido (ultima pag),
-            # ou atingiu o total informado pela API (quando confiavel)
             if not itens or len(itens) < tam or (total > 0 and len(todos) >= total):
                 break
 
@@ -141,12 +139,15 @@ class ContaAzulAPI:
             time.sleep(0.2)
         return todos
 
-    def get_contas_receber(self, data_alteracao_de: str = None) -> list:
+    def get_contas_receber(self, data_alteracao_de: str = None,
+                           ids_contas_financeiras: list = None) -> list:
         inicio, fim = self._range_padrao()
         params_extras = {}
         if data_alteracao_de:
             params_extras["data_alteracao_de"]  = data_alteracao_de
             params_extras["data_alteracao_ate"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        if ids_contas_financeiras:
+            params_extras["ids_contas_financeiras"] = ids_contas_financeiras
 
         return self._paginar_por_chunks(
             path="/v1/financeiro/eventos-financeiros/contas-a-receber/buscar",
@@ -154,15 +155,18 @@ class ContaAzulAPI:
             campo_fim="data_vencimento_ate",
             dt_inicio=inicio,
             dt_fim=fim,
-            #params_extras=params_extras,
+            params_extras=params_extras if params_extras else None,
         )
 
-    def get_contas_pagar(self, data_alteracao_de: str = None) -> list:
+    def get_contas_pagar(self, data_alteracao_de: str = None,
+                         ids_contas_financeiras: list = None) -> list:
         inicio, fim = self._range_padrao()
         params_extras = {}
         if data_alteracao_de:
             params_extras["data_alteracao_de"]  = data_alteracao_de
             params_extras["data_alteracao_ate"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        if ids_contas_financeiras:
+            params_extras["ids_contas_financeiras"] = ids_contas_financeiras
 
         return self._paginar_por_chunks(
             path="/v1/financeiro/eventos-financeiros/contas-a-pagar/buscar",
@@ -170,7 +174,7 @@ class ContaAzulAPI:
             campo_fim="data_vencimento_ate",
             dt_inicio=inicio,
             dt_fim=fim,
-            #params_extras=params_extras,
+            params_extras=params_extras if params_extras else None,
         )
 
     def get_contas_financeiras(self) -> list:
