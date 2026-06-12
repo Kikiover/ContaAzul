@@ -37,9 +37,8 @@ def _data_alteracao_incremental(ultima_sync: str, recuo_dias: int = 3) -> str | 
 
 
 def _sync_pessoas(api: ContaAzulAPI, cliente_id: str, ultima_sync: str) -> int:
-    data_alt = _data_alteracao_incremental(ultima_sync)
-    # Puxar clientes e fornecedores em uma chamada só (sem filtro de tipo)
-    registros = api.get_pessoas(data_alteracao_de=data_alt)
+    # Pessoas são poucos registros — sempre sync completa para não perder ninguém
+    registros = api.get_pessoas()
     return salvar_pessoas(cliente_id, registros)
 
 

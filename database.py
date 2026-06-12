@@ -1,7 +1,8 @@
 # database.py
 import os
 import sqlite3
-from config import CONTROLE_DB, DRIVE_ROOT
+import config
+from config import CONTROLE_DB
 
 
 def _conectar(path: str) -> sqlite3.Connection:
@@ -114,7 +115,7 @@ def registrar_log(cliente_id: str, tipo: str, status: str,
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def caminho_db_cliente(cliente_id: str) -> str:
-    pasta = os.path.join(DRIVE_ROOT, cliente_id)
+    pasta = os.path.join(config.DRIVE_ROOT, cliente_id)
     os.makedirs(pasta, exist_ok=True)
     return os.path.join(pasta, "dados.db")
 

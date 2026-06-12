@@ -53,29 +53,31 @@ class ContaAzulAPI:
 
         raise RuntimeError(f"Máximo de tentativas atingido: {path}")
 
-    def _paginar(self, path: str, params: dict = None) -> list:
+    def _paginar(self, path: str, params: dict = None, page_size: int = None) -> list:
         """Itera todas as páginas de um endpoint e retorna lista completa."""
-        params = {**(params or {}), "tamanho_pagina": PAGE_SIZE, "pagina": 1}
+        tam = page_size or PAGE_SIZE
+        params = {**(params or {}), "tamanho_pagina": tam, "pagina": 1}
         todos = []
 
         while True:
             data = self._request("GET", path, params=params)
 
-            # Normaliza formatos: itens/itens_totais ou items/totalItems
             itens = data.get("itens") or data.get("items") or []
             if itens is None:
                 itens = []
             total = data.get("itens_totais") or data.get("totalItems") or 0
 
             todos.extend(itens)
-            if itens and params.get("pagina") == 1 and len(todos) == len(itens):
+            if itens and params.get("pagina") == 1:
                 import json
                 print("=== EXEMPLO REGISTRO ===")
                 print(json.dumps(itens[0], indent=2, ensure_ascii=False))
                 print("========================")
             print(f"  p.{params['pagina']} | +{len(itens)} | acumulado: {len(todos)}/{total}")
 
-            if len(todos) >= total or not itens:
+            # Para se nao veio nada, ou veio menos que o tamanho pedido (ultima pag),
+            # ou atingiu o total informado pela API (quando confiavel)
+            if not itens or len(itens) < tam or (total > 0 and len(todos) >= total):
                 break
 
             params["pagina"] += 1
@@ -121,11 +123,23 @@ class ContaAzulAPI:
     # ─── Endpoints ────────────────────────────────────────────────────────────
 
     def get_pessoas(self, data_alteracao_de: str = None) -> list:
-        params = {}
+        params = {"tamanho_pagina": 10, "pagina": 1, "com_endereco": "true"}
         if data_alteracao_de:
             params["data_alteracao_de"]  = data_alteracao_de
             params["data_alteracao_ate"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-        return self._paginar("/v1/pessoas", params)
+
+        todos = []
+        while True:
+            data = self._request("GET", "/v1/pessoas", params=params)
+            itens = data.get("items") or []
+            total = data.get("totalItems") or 0
+            todos.extend(itens)
+            print(f"  [pessoas] p.{params['pagina']} | +{len(itens)} | acumulado: {len(todos)}/{total}")
+            if not itens or len(todos) >= total:
+                break
+            params["pagina"] += 1
+            time.sleep(0.2)
+        return todos
 
     def get_contas_receber(self, data_alteracao_de: str = None) -> list:
         inicio, fim = self._range_padrao()
